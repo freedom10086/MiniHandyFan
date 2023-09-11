@@ -6,6 +6,7 @@
 #define RAGEFAN_OLED_H
 
 #include "stdio.h"
+#include "oledfont.h"
 
 #define LCD_PIXEL_CLOCK_HZ      (400 * 1000)
 #define I2C_HOST                0
@@ -15,12 +16,15 @@
 #define LCD_HEIGHT              32
 #define I2C_MASTER_TIMEOUT_MS   100
 
-
 void oled_init();
 
 void oled_set_pos(uint8_t x, uint8_t y);
 
 void oled_draw_bitmap(uint8_t x, uint8_t y, uint8_t width, uint8_t height, const uint8_t *bmp);
+
+void olde_draw_char(uint8_t x, uint8_t y, const char chr, uint8_t sizey);
+
+void oled_draw_string(uint8_t x, uint8_t y, const char *chr, uint8_t sizey);
 
 void oled_display_on(void);
 
@@ -32,4 +36,4 @@ void oled_reverse_color(uint8_t reverse);
 
 void oled_display_rotate(uint8_t rotate);
 
-#endif //RAGEFAN_OLED_H
+#endif

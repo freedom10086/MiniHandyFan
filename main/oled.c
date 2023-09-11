@@ -116,18 +116,51 @@ void oled_draw_bitmap(uint8_t x, uint8_t y, uint8_t width, uint8_t height, const
     }
 }
 
+//在指定位置显示一个字符
+//x:0~63
+//y:0~31
+//sizey:选择字体 6x8  8x16
+void olde_draw_char(uint8_t x, uint8_t y, const char chr, uint8_t sizey) {
+    uint8_t c = 0, sizex = sizey / 2, temp;
+    uint16_t i = 0, size1;
+    if (sizey == 8)size1 = 6;
+    else size1 = (sizey / 8 + ((sizey % 8) ? 1 : 0)) * (sizey / 2);
+    c = chr - ' ';//得到偏移后的值
+    oled_set_pos(x, y);
+    for (i = 0; i < size1; i++) {
+        if (i % sizex == 0 && sizey != 8) oled_set_pos(x, y++);
+        if (sizey == 8) {
+            temp = asc2_0806[c][i];
+            i2c_write_data(temp);//6X8字号
+        } else if (sizey == 16) {
+            temp = asc2_1608[c][i];
+            i2c_write_data(temp);//8x16字号
+        } else return;
+    }
+}
+
+//显示一个字符号串
+void oled_draw_string(uint8_t x, uint8_t y, const char *chr, uint8_t sizey) {
+    uint8_t j = 0;
+    while (chr[j] != '\0') {
+        olde_draw_char(x, y, chr[j++], sizey);
+        if (sizey == 8)x += 6;
+        else x += sizey / 2;
+    }
+}
+
 //开启OLED显示
 void oled_display_on(void) {
     i2c_write_cmd(0X8D);  //SET DCDC命令
     i2c_write_cmd(0X14);  //DCDC ON
-    i2c_write_cmd(0XAF);  //DISPLAY ON
+    i2c_write_cmd(SSD1306_DISPLAYON);  //DISPLAY ON
 }
 
 //关闭OLED显示
 void oled_display_off(void) {
     i2c_write_cmd(0X8D);  //SET DCDC命令
     i2c_write_cmd(0X10);  //DCDC OFF
-    i2c_write_cmd(0XAE);  //DISPLAY OFF
+    i2c_write_cmd(SSD1306_DISPLAYOFF);  //DISPLAY OFF
 }
 
 //清屏函数,清完屏,整个屏幕是黑色的!和没点亮一样!!!

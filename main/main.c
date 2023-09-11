@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <inttypes.h>
-#include <esp_lcd_panel_vendor.h>
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -11,15 +10,11 @@
 #include "driver/ledc.h"
 #include "driver/pulse_cnt.h"
 #include "esp_sleep.h"
-#include "esp_lcd_panel_io.h"
-#include "esp_lcd_panel_ops.h"
-#include "lvgl.h"
 
 #include "key.h"
 #include "battery.h"
 #include "fan_common.h"
 #include "oled.h"
-#include "esp_lvgl_port.h"
 
 #define FAN_PWR_IO 3
 
@@ -37,7 +32,8 @@
 esp_event_loop_handle_t event_loop_handle;
 RTC_DATA_ATTR static uint32_t boot_count = 0;
 static TaskHandle_t x_update_notify_handl = NULL;
-
+static char info_page_draw_text_buf[64] = {0};
+uint8_t current_page_index = 0;
 
 void fan_pwr_on();
 
@@ -192,11 +188,25 @@ void init_fan_event_loop() {
                                     key_click_event_handler, NULL);
 }
 
-static bool
-notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx) {
-    lv_disp_t *disp = (lv_disp_t *) user_ctx;
-    lvgl_port_flush_ready(disp);
-    return false;
+void draw_page() {
+    if (current_page_index == 0) {
+        // main page
+        oled_clear();
+
+        sprintf(info_page_draw_text_buf, "bat: %d%%", battery_get_level());
+        oled_draw_string(0, 0, info_page_draw_text_buf, 8);
+
+        sprintf(info_page_draw_text_buf, "SPD:%d%%", 50);
+        oled_draw_string(0, 2, info_page_draw_text_buf, 16);
+    } else if (current_page_index == 1) {
+        // setting page
+        oled_clear();
+        oled_draw_string(0, 1, "POWER OFF", 16);
+    } else if (current_page_index == 2) {
+        // setting page
+        oled_clear();
+        oled_draw_string(0, 1, "WIFI: ON", 16);
+    }
 }
 
 void lcd_task_start() {
@@ -212,65 +222,10 @@ void lcd_task_start() {
     ESP_ERROR_CHECK(i2c_param_config(I2C_HOST, &i2c_conf));
     ESP_ERROR_CHECK(i2c_driver_install(I2C_HOST, I2C_MODE_MASTER, 0, 0, 0));
 
-    ESP_LOGI(TAG, "Install panel IO");
-    esp_lcd_panel_io_handle_t io_handle = NULL;
-    esp_lcd_panel_io_i2c_config_t io_config = {
-            .dev_addr = 0x3C,
-            .control_phase_bytes = 1,
-            .lcd_cmd_bits = 8,
-            .lcd_param_bits = 8,
-            .dc_bit_offset = 6,
-    };
-    ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c((esp_lcd_i2c_bus_handle_t) I2C_HOST, &io_config, &io_handle));
-
-    ESP_LOGI(TAG, "Install SSD1306 panel driver");
-    esp_lcd_panel_handle_t panel_handle = NULL;
-    esp_lcd_panel_dev_config_t panel_config = {
-            .bits_per_pixel = 1,
-            .reset_gpio_num = -1,
-    };
-    ESP_ERROR_CHECK(esp_lcd_new_panel_ssd1306(io_handle, &panel_config, &panel_handle));
-
-    ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
-    ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
-    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
-
-    ESP_LOGI(TAG, "Initialize LVGL");
-    const lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
-    lvgl_port_init(&lvgl_cfg);
-
-    const lvgl_port_display_cfg_t disp_cfg = {
-            .io_handle = io_handle,
-            .panel_handle = panel_handle,
-            .buffer_size = 64 * 32,
-            .double_buffer = true,
-            .hres = 64,
-            .vres = 32,
-            .monochrome = true,
-            .rotation = {
-                    .swap_xy = false,
-                    .mirror_x = false,
-                    .mirror_y = false,
-            }
-    };
-    lv_disp_t *disp = lvgl_port_add_disp(&disp_cfg);
-    /* Register done callback for IO */
-    const esp_lcd_panel_io_callbacks_t cbs = {
-            .on_color_trans_done = notify_lvgl_flush_ready,
-    };
-    esp_lcd_panel_io_register_event_callbacks(io_handle, &cbs, disp);
-
-    /* Rotation of the screen */
-    lv_disp_set_rotation(disp, LV_DISP_ROT_NONE);
-
-    ESP_LOGI(TAG, "Display LVGL Scroll Text");
-    lv_obj_t *scr = lv_disp_get_scr_act(disp);
-    lv_obj_t *label = lv_label_create(scr);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_SCROLL_CIRCULAR); /* Circular scroll */
-    lv_label_set_text(label, "Miny Handy Fan");
-    /* Size of the screen (if you use rotation 90 or 270, please set disp->driver->ver_res) */
-    lv_obj_set_width(label, disp->driver->hor_res);
-    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+    oled_init();
+    oled_draw_bitmap(0, 0, 64, 32, BMP1);
+    vTaskDelay(pdMS_TO_TICKS(600));
+    draw_page();
 }
 
 static bool pcnt_on_reach(pcnt_unit_handle_t unit, const pcnt_watch_event_data_t *edata, void *user_ctx) {
@@ -350,6 +305,8 @@ void encoder_task_entry(void *args) {
 }
 
 void enter_deep_sleep(int sleep_ts) {
+    oled_display_off();
+
     if (sleep_ts > 0) {
         esp_sleep_enable_timer_wakeup(sleep_ts * 1000000);
     }
