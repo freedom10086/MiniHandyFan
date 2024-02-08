@@ -1,7 +1,9 @@
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "oled.h"
 #include "esp_log.h"
 #include "stdio.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 
 #define TAG "oled"
 
@@ -40,10 +42,12 @@
 #define SSD1306_VERTICAL_AND_RIGHT_HORIZONTAL_SCROLL 0x29
 #define SSD1306_VERTICAL_AND_LEFT_HORIZONTAL_SCROLL 0x2A
 
+static i2c_master_dev_handle_t dev_handle;
+
 static esp_err_t i2c_write_cmd(uint8_t cmd) {
     int ret;
     uint8_t write_buf[2] = {0x00, cmd};
-    ret = i2c_master_write_to_device(I2C_HOST, LCD_I2C_ADDR,
+    ret = i2c_master_transmit(dev_handle,
                                      write_buf, sizeof(write_buf),
                                      I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
     if (ret != ESP_OK) {
@@ -55,7 +59,7 @@ static esp_err_t i2c_write_cmd(uint8_t cmd) {
 static esp_err_t i2c_write_data(uint8_t data) {
     int ret;
     uint8_t write_buf[2] = {0x40, data};
-    ret = i2c_master_write_to_device(I2C_HOST, LCD_I2C_ADDR,
+    ret = i2c_master_transmit(dev_handle,
                                      write_buf,
                                      sizeof(write_buf),
                                      I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
@@ -65,7 +69,40 @@ static esp_err_t i2c_write_data(uint8_t data) {
     return ret;
 }
 
-void oled_init() {
+static void lcd_i2c_init(gpio_num_t sda, gpio_num_t scl) {
+    ESP_LOGI(TAG, "Initialize I2C bus");
+
+    int i2c_master_port = I2C_HOST;
+    i2c_master_bus_config_t i2c_mst_config = {
+            .clk_source = I2C_CLK_SRC_DEFAULT,
+            .i2c_port = i2c_master_port,
+            .scl_io_num = scl,
+            .sda_io_num = sda,
+            .glitch_ignore_cnt = 7,
+            .flags.enable_internal_pullup = true,
+    };
+    i2c_master_bus_handle_t i2c_bus_handle;
+    esp_err_t iic_err = i2c_new_master_bus(&i2c_mst_config, &i2c_bus_handle);
+    if (iic_err != ESP_OK) {
+        ESP_LOGE(TAG, "I2C initialized failed %d %s", iic_err, esp_err_to_name(iic_err));
+    } else {
+        ESP_LOGI(TAG, "I2C initialized successfully");
+    }
+
+    i2c_device_config_t dev_cfg = {
+            .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+            .device_address = LCD_I2C_ADDR,
+            .scl_speed_hz = 100000,
+    };
+
+    esp_err_t err = i2c_master_bus_add_device(i2c_bus_handle, &dev_cfg, &dev_handle);
+    if (err != ESP_OK) {
+        ESP_LOGI(TAG, "I2C add device failed");
+    }
+}
+
+void oled_init(gpio_num_t sda, gpio_num_t scl) {
+    lcd_i2c_init(sda, scl);
     vTaskDelay(pdMS_TO_TICKS(100));
 
     i2c_write_cmd(SSD1306_DISPLAYOFF); /*display off*/

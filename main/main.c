@@ -6,7 +6,6 @@
 #include "esp_chip_info.h"
 #include "esp_system.h"
 #include "esp_log.h"
-#include "driver/i2c.h"
 #include "driver/ledc.h"
 #include "driver/pulse_cnt.h"
 #include "esp_sleep.h"
@@ -193,9 +192,14 @@ void draw_page() {
         // main page
         oled_clear();
 
-        sprintf(info_page_draw_text_buf, "bat: %d%%", battery_get_level());
-        oled_draw_string(0, 0, info_page_draw_text_buf, 8);
+        int8_t level = battery_get_level();
+        if (level < 0) {
+            sprintf(info_page_draw_text_buf, "bat: --");
+        } else {
+            sprintf(info_page_draw_text_buf, "bat: %d%%", level);
+        }
 
+        oled_draw_string(0, 0, info_page_draw_text_buf, 8);
         sprintf(info_page_draw_text_buf, "SPD:%d%%", 50);
         oled_draw_string(0, 2, info_page_draw_text_buf, 16);
     } else if (current_page_index == 1) {
@@ -210,19 +214,7 @@ void draw_page() {
 }
 
 void lcd_task_start() {
-    ESP_LOGI(TAG, "Initialize I2C bus");
-    i2c_config_t i2c_conf = {
-            .mode = I2C_MODE_MASTER,
-            .sda_io_num = EXT_IO_1,
-            .scl_io_num = EXT_IO_2,
-            .sda_pullup_en = GPIO_PULLUP_ENABLE,
-            .scl_pullup_en = GPIO_PULLUP_ENABLE,
-            .master.clk_speed = LCD_PIXEL_CLOCK_HZ,
-    };
-    ESP_ERROR_CHECK(i2c_param_config(I2C_HOST, &i2c_conf));
-    ESP_ERROR_CHECK(i2c_driver_install(I2C_HOST, I2C_MODE_MASTER, 0, 0, 0));
-
-    oled_init();
+    oled_init(EXT_IO_1, EXT_IO_2);
     oled_draw_bitmap(0, 0, 64, 32, BMP1);
     vTaskDelay(pdMS_TO_TICKS(600));
     draw_page();

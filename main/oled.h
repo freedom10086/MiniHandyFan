@@ -5,6 +5,7 @@
 #ifndef RAGEFAN_OLED_H
 #define RAGEFAN_OLED_H
 
+#include <soc/gpio_num.h>
 #include "stdio.h"
 #include "oledfont.h"
 
@@ -16,7 +17,7 @@
 #define LCD_HEIGHT              32
 #define I2C_MASTER_TIMEOUT_MS   100
 
-void oled_init();
+void oled_init(gpio_num_t sda, gpio_num_t scl);
 
 void oled_set_pos(uint8_t x, uint8_t y);
 
